@@ -1,0 +1,30 @@
+[[source]]
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+verify_ssl = true
+name = "pip_conf_index_global"
+
+[packages]
+pysnowflake = "*"
+uvicorn = {extras = ["standard"], version = "*"}
+typer = "*"
+loguru = "*"
+fastapi = "*"
+pydantic = "*"
+pydantic-settings = "*"
+beanie = "*"
+redis-om = "*"
+
+[dev-packages]
+black = "*"
+pylint = "*"
+pylint-pydantic = "*"
+httpx = "*"
+pytest = "*"
+pytest-cov = "*"
+pytest-html = "*"
+pytest-assume = "*"
+pytest-ordering = "*"
+pytest-dependency = "*"
+
+[requires]
+python_version = "3.10"

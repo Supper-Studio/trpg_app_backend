@@ -1,0 +1,40 @@
+{
+    // code linting
+    "python.linting.flake8Enabled": false,
+    "python.linting.pylintEnabled": true,
+    "python.linting.enabled": true,
+    "python.linting.pylintArgs": [
+        "--rcfile=pylint.conf",
+        "--extension-pkg-whitelist=pydantic"
+    ],
+    "python.analysis.typeCheckingMode": "base",
+    "python.analysis.completeFunctionParens": true,
+    // python formatting
+    "python.formatting.provider": "black",
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+        "source.organizeImports": true
+    },
+    "isort.args": [
+        "--profile",
+        "black"
+    ],
+    // file exclude
+    "files.exclude": {
+        "**/.git": true,
+        "**/.svn": true,
+        "**/.hg": true,
+        "**/CVS": true,
+        "**/.DS_Store": true,
+        "**/Thumbs.db": true,
+        // custom files
+        "**/__pycache__": true,
+        "PIPENV_VENV_IN_PROJECT": true,
+        // "pylint.conf": true,
+        // "Pipfile": true,
+        // "Pipfile.lock": true,
+        // ".gitignore": true,
+    },
+    "keep-a-changelog.defaultAuthor": "Supper-Studio",
+    "keep-a-changelog.defaultRepository": "trpg-app-backend",
+}
