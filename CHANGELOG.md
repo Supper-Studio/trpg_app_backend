@@ -7,6 +7,11 @@
 
 ## [Unreleased]
 
+### Added
+
+- 从环境变量和 .env 文件中读取项目设置
+- 从启动参数中指定读取的 env 文件
+
 ## [0.0.1] - 2023-07-12
 
 - initial release
