@@ -1,16 +1,16 @@
 {
     // code linting
-    "python.linting.flake8Enabled": false,
-    "python.linting.pylintEnabled": true,
-    "python.linting.enabled": true,
-    "python.linting.pylintArgs": [
+    "pylint.args": [
         "--rcfile=pylint.conf",
-        "--extension-pkg-whitelist=pydantic"
+        // "--generated-members"
     ],
-    "python.analysis.typeCheckingMode": "base",
-    "python.analysis.completeFunctionParens": true,
+    "python.languageServer": "Pylance",
+    "python.analysis.typeCheckingMode": "basic",
+    "python.analysis.autoFormatStrings": true,
+    "python.analysis.inlayHints.variableTypes": true,
+    "python.analysis.inlayHints.functionReturnTypes": true,
+    "python.analysis.inlayHints.pytestParameters": true,
     // python formatting
-    "python.formatting.provider": "black",
     "editor.formatOnSave": true,
     "editor.codeActionsOnSave": {
         "source.organizeImports": true
@@ -19,6 +19,17 @@
         "--profile",
         "black"
     ],
+    // python test
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestEnabled": true,
+    "pythonTestExplorer.testFramework": "pytest",
+    "python.testing.pytestArgs": [
+        "test",
+        "--cov=app",
+        "--cov-report=html"
+    ],
+    "python.testing.autoTestDiscoverOnSaveEnabled": true,
+    "testExplorer.errorDecorationHover": true,
     // file exclude
     "files.exclude": {
         "**/.git": true,
@@ -30,6 +41,7 @@
         // custom files
         "**/__pycache__": true,
         "PIPENV_VENV_IN_PROJECT": true,
+        "htmlcov/[!i]*": true,
         // "pylint.conf": true,
         // "Pipfile": true,
         // "Pipfile.lock": true,
