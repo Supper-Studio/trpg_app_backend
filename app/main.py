@@ -39,4 +39,9 @@ def create_app() -> FastAPI:
     if settings.ssl.redirect:
         app.add_middleware(HTTPSRedirectMiddleware)
 
+    # 注册事件
+    app.add_event_handler("startup", Logger.start_logging)
+
+    app.add_event_handler("shutdown", Logger.stop_logging)
+
     return app
