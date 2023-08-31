@@ -161,16 +161,16 @@ class _IDServiceSettings(BaseModel):
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_nested_delimiter="__",
         env_file=None,
+        env_nested_delimiter="__",
     )
 
-    service: _ServiceSettings
-    ssl: _SSLSettings
-    database: _DatabaseSettings
-    document: _DocumentSettings
-    log: _LogSettings
-    id_service: _IDServiceSettings
+    service: _ServiceSettings = Field(default=..., title="Service settings")
+    ssl: _SSLSettings = Field(default=..., title="SSL settings")
+    database: _DatabaseSettings = Field(default=..., title="Database settings")
+    document: _DocumentSettings = Field(default=..., title="Document settings")
+    log: _LogSettings = Field(default=..., title="Log settings")
+    id_service: _IDServiceSettings = Field(default=..., title="ID Service settings")
 
 
 class SettingsManager:
