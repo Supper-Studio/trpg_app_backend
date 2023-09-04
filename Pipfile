@@ -13,6 +13,7 @@ pydantic = "*"
 pydantic-settings = "*"
 beanie = "*"
 redis-om = "*"
+fastapi-cache2 = {extras = ["redis"], version = "*"}
 
 [dev-packages]
 black = "*"
