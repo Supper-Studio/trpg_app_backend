@@ -13,6 +13,7 @@ pydantic = "*"
 pydantic-settings = "*"
 beanie = "*"
 redis-om = "*"
+pytest-asyncio = "*"
 
 [dev-packages]
 black = "*"
