@@ -5,17 +5,60 @@ import pytest
 from pydantic import BaseModel, Field
 from snowflake import client
 
-from app.util.type.guid import GUID, GUIDClient, GUIDDetail, PydanticGUID
+from app.util.settings import SettingsManager
+from app.util.type.guid import GUID, GUIDClient, GUIDDetail, PydanticGUID, ServiceStats
 
 
+@pytest.fixture(scope="class")
+def set_id_service_address() -> None:
+    """加载设置中的 ID 服务地址"""
+    GUIDClient.set_address_by_settings()
+
+
+@pytest.mark.unit_test
+@pytest.mark.run(order=TestType.UNIT_TEST)
+@pytest.mark.usefixtures("set_id_service_address")
 class TestGUIDClient:
     def test_init(self) -> None:
-        with pytest.raises(RuntimeError):
+        with pytest.raises(RuntimeError, match=r"not meant to be instantiated"):
             GUIDClient()
 
-    def test_start_up(self) -> None:
-        GUIDClient.start_up()
-        GUID.generate()
+    def test_get_address(self) -> None:
+        assert GUIDClient.get_address() == getattr(GUIDClient, "_id_service_address")
+
+    @pytest.mark.parametrize(
+        ["host", "port"],
+        [
+            ("localhost", 8910),
+            ("127.0.0.1", 8910),
+        ],
+    )
+    def test_set_address(self, host: str, port: int) -> None:
+        GUIDClient.set_address(host, port)
+        assert GUIDClient.get_address() == f"http://{host}:{port}"
+
+    def test_set_address_by_settings(self) -> None:
+        id_service = SettingsManager.get_settings().id_service
+
+        GUIDClient.set_address_by_settings()
+        assert GUIDClient.get_address() == f"http://{id_service.host}:{id_service.port}"
+
+    @pytest.mark.asyncio
+    async def test_get_guid(self) -> None:
+        guid: int = await GUIDClient.get_guid()
+
+        assert isinstance(guid, int)
+        assert GUID.is_valid(guid)
+
+    @pytest.mark.asyncio
+    async def test_get_service_status(self) -> None:
+        status: ServiceStats = await GUIDClient.get_service_status()
+
+        assert isinstance(status, dict)
+        assert (
+            status.keys() == ServiceStats.__required_keys__  # pylint: disable=no-member
+        )
+
 
 
 @pytest.fixture(scope="session")

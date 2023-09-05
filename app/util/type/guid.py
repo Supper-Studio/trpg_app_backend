@@ -11,6 +11,7 @@ from typing import (
     overload,
 )
 
+from httpx import AsyncClient, Response
 from loguru import logger
 from pydantic import GetJsonSchemaHandler
 from pydantic.json_schema import JsonSchemaValue
@@ -21,23 +22,72 @@ from snowflake.server.generator import EPOCH_TIMESTAMP
 from app.util.settings import Settings, SettingsManager
 
 
+class ServiceStats(TypedDict):
+    dc: int
+    worker: int
+    timestamp: int
+    last_timestamp: int
+    sequence: int
+    sequence_overload: int
+    errors: int
+
+
 class GUIDClient:
+    _id_service_address: str = "http://localhost:8910"
+
     def __init__(
         self,
     ) -> NoReturn:
         raise RuntimeError("This class is not meant to be instantiated")
 
-    @staticmethod
-    def start_up() -> None:
-        """配置 Snowflake ID 服务的客户端"""
-        settings: Settings = SettingsManager.get_settings()
+    @classmethod
+    def set_address(cls, host: str, port: int) -> None:
+        """设置 ID 服务的根路径
 
-        client.setup(
+        Args:
+            host (str): 主机地址
+            port (int): 端口号
+        """
+        address: str = f"http://{host}:{port}"
+
+        cls._id_service_address = address
+        logger.info(f"Set ID service address to {address}")
+
+    @classmethod
+    def get_address(cls) -> str:
+        """获取 ID 服务"""
+        return cls._id_service_address
+
+    @classmethod
+    def set_address_by_settings(cls) -> None:
+        """将 ID 服务的根路径设置为环境变量（或 .env 文件）中的值"""
+        settings: Settings = SettingsManager.get_settings()
+        cls.set_address(
             host=settings.id_service.host,
             port=settings.id_service.port,
         )
 
-        logger.info(f"Snowflake ID Service status: {client.get_stats()}")
+    @classmethod
+    async def get_guid(cls) -> int:
+        """异步请求 ID 服务提供新的 guid
+
+        Returns:
+            int: 新生成的 guid
+        """
+        async with AsyncClient(base_url=cls._id_service_address) as client:
+            res: Response = await client.get("/")
+            return int(res.text)
+
+    @classmethod
+    async def get_service_status(cls) -> ServiceStats:
+        """异步请求 ID 服务状态信息
+
+        Returns:
+            ServiceStats: 状态信息字典
+        """
+        async with AsyncClient(base_url=cls._id_service_address) as client:
+            res: Response = await client.get("/stats")
+            return ServiceStats(res.json())
 
 
 class GUIDDetail(TypedDict):
