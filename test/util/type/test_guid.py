@@ -1,7 +1,9 @@
 from re import Match, match
+from test.run_order import TestType
 from time import strftime
 
 import pytest
+import pytest_asyncio
 from pydantic import BaseModel, Field
 from snowflake import client
 
@@ -60,49 +62,69 @@ class TestGUIDClient:
         )
 
 
-
-@pytest.fixture(scope="session")
-def snowflake_client() -> None:
-    """初始化一个 Snowflake ID 服务的客户端"""
-    client.setup("localhost", "8910")
-
-
-@pytest.fixture
-def new_client_guid() -> int:
-    """从 Snowflake ID 服务中获取一个新的 GUID
-
-    Returns:
-        int: 获取到的新的 GUID
-    """
-    return client.get_guid()
+@pytest_asyncio.fixture
+async def guid_instance() -> GUID:
+    """创建一个新的 GUID 实例"""
+    return await GUID.generate()
 
 
-@pytest.fixture
-def new_guid() -> GUID:
-    """创建一个新的 GUID 对象
-
-    Returns:
-        GUID: 新构造的 GUID 实例
-    """
-    return GUID(client.get_guid())
+@pytest_asyncio.fixture
+async def client_guid() -> int:
+    """从 ID 服务客户端中获取一个 GUID"""
+    return await GUIDClient.get_guid()
 
 
-@pytest.mark.usefixtures("snowflake_client")
+INVALID_GUID: list[int] = [
+    12345678901234,
+    -12345678901234,
+    0,
+    -1,
+]
+
+
+@pytest.mark.unit_test
+@pytest.mark.run(order=TestType.UNIT_TEST)
+@pytest.mark.usefixtures("set_id_service_address")
 class TestGUID:
     # pylint: disable=unneeded-not
-    def test_init(self, new_client_guid: int) -> None:
-        guid = GUID(new_client_guid)
-        assert isinstance(guid, GUID)
 
-        guid = GUID(new_client_guid, need_validate=False)
-        assert isinstance(guid, GUID)
+    def test_init(self, client_guid: int) -> None:
+        with pytest.raises(AssertionError, match=r"GUID can only be created with"):
+            GUID(client_guid, object())
 
-        with pytest.raises(ValueError, match=r".* is not a valid GUID"):
-            GUID(123)
+    async def test_generate(self) -> None:
+        _guid_instance: GUID = await GUID.generate()
+        assert isinstance(_guid_instance, GUID)
+        assert await GUID.is_valid(_guid_instance.guid)
 
-    def test_parse_str(self, new_client_guid: int) -> None:
-        with pytest.raises(ValueError, match=r"guid .* is not a number"):
-            GUID.parse_str("abc")
+    async def test_from_int(self, client_guid: int) -> None:
+        _guid_instance: GUID = await GUID.from_int(client_guid)
+        assert isinstance(_guid_instance, GUID)
+        assert await GUID.is_valid(client_guid)
+        assert _guid_instance.guid == client_guid
+
+    @pytest.mark.parametrize("guid", INVALID_GUID)
+    async def test_from_int_invalid_args(self, guid: Any) -> None:
+        with pytest.raises(ValueError, match=r"is not a valid GUID"):
+            await GUID.from_int(guid)
+
+    async def test_from_str(self, client_guid: int) -> None:
+        _guid_instance: GUID = await GUID.from_str(str(client_guid))
+        assert isinstance(_guid_instance, GUID)
+        assert await GUID.is_valid(client_guid)
+        assert _guid_instance.guid == client_guid
+
+    @pytest.mark.parametrize(
+        ["guid", "error_pattern"],
+        [
+            ("0", r"is not a valid GUID"),
+            ("0x42919b569dbffe38", r"is not a number"),
+            ("abc", r"is not a number"),
+        ],
+    )
+    async def test_from_str_invalid_args(self, guid: Any, error_pattern: str) -> None:
+        with pytest.raises(ValueError, match=error_pattern):
+            await GUID.from_str(guid)
 
         with pytest.raises(ValueError, match=r".* is not a valid GUID"):
             GUID(123)

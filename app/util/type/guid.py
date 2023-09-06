@@ -1,22 +1,11 @@
 from time import localtime, strftime, struct_time
-from typing import (
-    Annotated,
-    Any,
-    Callable,
-    Generator,
-    NoReturn,
-    Optional,
-    TypeAlias,
-    TypedDict,
-    overload,
-)
+from typing import Annotated, Any, Callable, NoReturn, Optional, TypeAlias, TypedDict
 
 from httpx import AsyncClient, Response
 from loguru import logger
 from pydantic import GetJsonSchemaHandler
 from pydantic.json_schema import JsonSchemaValue
 from pydantic_core import core_schema
-from snowflake import client
 from snowflake.server.generator import EPOCH_TIMESTAMP
 
 from app.util.settings import Settings, SettingsManager
@@ -113,80 +102,54 @@ class GUID:
     """
 
     _guid: int = 0
+    __create_key = object()
 
-    @overload
-    def __init__(self) -> None:
-        """生成新的 GUID 对象。"""
-
-    @overload
-    def __init__(self, guid: str) -> None:
-        """通过解析字符串创建新的 GUID 对象。
-
-        Args:
-            guid (str): 要解析的 GUID 字符串
-
-        Raises:
-            ValueError: GUID 不合法时抛出异常
-        """
-
-    @overload
-    def __init__(self, guid: int, *, need_validate: Optional[bool] = True) -> None:
-        """使用整型数据创建新的 GUID 对象。
-
-        Args:
-            guid (int): GUID 数据
-            need_validate (Optional[bool], optional): 是否需要校验，请勿手动传入这个参数. Defaults to True.
-
-        Raises:
-            ValueError: GUID 不合法时抛出异常
-        """
-
-    def __init__(
-        self,
-        guid: Optional[int | str] = None,
-        *,
-        need_validate: Optional[bool] = True,
-    ) -> None:
-        if guid is None:
-            self._guid = client.get_guid()
-            return
-
-        if isinstance(guid, int) and not need_validate:
-            self._guid = guid
-            return
-
-        if isinstance(guid, str):
-            if not guid.isdigit():
-                raise ValueError(f"guid ({guid}) is not a number")
-            guid = int(guid)
-
-        if not self.is_valid(guid):
-            raise ValueError(f"'{guid}' is not a valid GUID")
+    def __init__(self, guid: int, key: object) -> None:
+        assert key == GUID.__create_key, (
+            "GUID can only be created with "
+            + "GUID.generate(), GUID.from_str() or GUID.from_int()"
+        )
 
         self._guid = guid
 
     @classmethod
-    def generate(cls) -> "GUID":
+    async def generate(cls) -> "GUID":
         """从服务端获取新的 GUID
 
         Returns:
-            T: 新的 GUID 对象
+            GUID: 新的 GUID 对象
         """
-        return cls(client.get_guid(), need_validate=False)
+        return cls(await GUIDClient.get_guid(), cls.__create_key)
 
     @classmethod
-    def parse_str(cls, guid: str) -> "GUID":
+    async def from_int(cls, guid: int) -> "GUID":
+        """将数字类型的 GUID 转换为 GUID 对象
+
+        Args:
+            guid (int): 数字类型的 GUID
+
+        Returns:
+            GUID: 新的 GUID 对象
+        """
+        if not await cls.is_valid(guid):
+            raise ValueError(f"'{guid}' is not a valid GUID")
+
+        return cls(guid, cls.__create_key)
+
+    @classmethod
+    async def from_str(cls, guid: str) -> "GUID":
         """将 GUID 字符串转换为 GUID 对象
 
         Args:
             guid (str): GUID 字符串
 
         Returns:
-            T: 新的 GUID 对象
+            GUID: 新的 GUID 对象
         """
         if not guid.isdigit():
             raise ValueError(f"guid ({guid}) is not a number")
-        return cls(int(guid))
+
+        return await cls.from_int(int(guid))
 
     @property
     def guid(self) -> int:
