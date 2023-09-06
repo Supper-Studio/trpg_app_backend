@@ -376,7 +376,7 @@ class _GUIDAnnotation:
         guid_schema: core_schema.ChainSchema = core_schema.chain_schema(
             [
                 core_schema.int_schema(),
-                core_schema.no_info_plain_validator_function(GUID),
+                core_schema.no_info_plain_validator_function(GUID.from_int),
             ]
         )
 
@@ -389,7 +389,8 @@ class _GUIDAnnotation:
                 ]
             ),
             serialization=core_schema.plain_serializer_function_ser_schema(
-                lambda instance: instance.guid,
+                str,
+                when_used="json",
             ),
         )
 
@@ -410,7 +411,7 @@ class _GUIDAnnotation:
 
 
 PydanticGUID: TypeAlias = (
-    Annotated[GUID, _GUIDAnnotation]
-    | Annotated[int, _GUIDAnnotation]
+    Annotated[int, _GUIDAnnotation]
     | Annotated[str, _GUIDAnnotation]
+    | Annotated[GUID, _GUIDAnnotation]
 )

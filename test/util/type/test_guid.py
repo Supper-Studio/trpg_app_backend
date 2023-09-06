@@ -1,3 +1,4 @@
+from json import loads
 from re import Match, match
 from test.run_order import TestType
 from time import strftime
@@ -294,23 +295,60 @@ class TestGUID:
         assert f"GUID({guid_instance.guid})" == repr(guid_instance)
 
 
-    assert isinstance(some_model.id, GUID)
-    assert some_model.id.guid == new_client_guid
-
-    with pytest.raises(ValueError, match=r".* is not a valid GUID"):
-        SomeModel(
-            id=123,
-            name="123",
-        )
+class SomeModel(BaseModel):
+    id: PydanticGUID
 
 
-def test_guid_in_field_default_factory() -> None:
-    class SomeModel(BaseModel):
-        id: PydanticGUID = Field(default_factory=GUID)
-        name: str
+class SomeModelWithDefaults(BaseModel):
+    id: PydanticGUID = Field(default_factory=GUID.generate)
 
-    some_model: SomeModel = SomeModel(
-        name="test",
-    )
 
-    assert isinstance(some_model.id, GUID)
+@pytest.mark.smoke_test
+@pytest.mark.run(order=TestType.SMOKE_TEST)
+class TestPydanticGUID:
+    def _is_model_instance_valid(
+        self,
+        _model_instance: SomeModel | SomeModelWithDefaults,
+        from_guid: Optional[int] = None,
+    ) -> None:
+        assert isinstance(_model_instance.id, GUID)
+
+        if from_guid is not None:
+            assert _model_instance.id.guid == from_guid
+
+    def test_guid_in_model_from_int(self, client_guid: int) -> None:
+        _model_instance = SomeModel(id=client_guid)
+        self._is_model_instance_valid(_model_instance, client_guid)
+
+    def test_guid_in_model_from_str(self, client_guid: int) -> None:
+        _model_instance = SomeModel(id=str(client_guid))
+        self._is_model_instance_valid(_model_instance, client_guid)
+
+    def test_guid_in_model_from_guid(self, guid_instance: GUID) -> None:
+        _model_instance = SomeModel(id=guid_instance)
+        self._is_model_instance_valid(_model_instance, guid_instance.guid)
+
+    def test_guid_in_model_from_default_factory(self) -> None:
+        _model_instance = SomeModelWithDefaults()
+        self._is_model_instance_valid(_model_instance)
+
+    @pytest.mark.parametrize("guid", INVALID_GUID_INTEGER)
+    def test_guid_in_model_invalid_args(self, guid: int) -> None:
+        with pytest.raises(ValueError, match=r"is not a valid GUID"):
+            SomeModel(id=guid)
+
+    @pytest.mark.parametrize(["guid", "_"], INVALID_GUID_STRING)
+    def test_guid_in_model_invalid_strings(self, guid: str, _: str) -> None:
+        with pytest.raises(ValidationError):
+            SomeModel(id=guid)
+
+    def test_guid_in_model_dump(self, client_guid: int) -> None:
+        some_model: SomeModel = SomeModel(id=client_guid)
+
+        assert some_model.model_dump() == {
+            "id": client_guid,
+        }
+
+        assert loads(some_model.model_dump_json()) == {
+            "id": str(client_guid),
+        }
