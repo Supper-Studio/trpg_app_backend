@@ -1,12 +1,10 @@
 from re import Match, match
 from test.run_order import TestType
 from time import strftime
-from typing import Any
+from typing import Any, Optional
 
 import pytest
-import pytest_asyncio
-from pydantic import BaseModel, Field
-from snowflake import client
+from pydantic import BaseModel, Field, ValidationError
 
 from app.util.settings import SettingsManager
 from app.util.type.guid import GUID, GUIDClient, GUIDDetail, PydanticGUID, ServiceStats
@@ -46,16 +44,28 @@ class TestGUIDClient:
         GUIDClient.set_address_by_settings()
         assert GUIDClient.get_address() == f"http://{id_service.host}:{id_service.port}"
 
-    @pytest.mark.asyncio
-    async def test_get_guid(self) -> None:
-        guid: int = await GUIDClient.get_guid()
+    def test_get_guid(self) -> None:
+        guid: int = GUIDClient.get_guid()
 
         assert isinstance(guid, int)
         assert GUID.is_valid(guid)
 
-    @pytest.mark.asyncio
-    async def test_get_service_status(self) -> None:
-        status: ServiceStats = await GUIDClient.get_service_status()
+    async def test_get_guid_async(self) -> None:
+        guid: int = await GUIDClient.get_guid_async()
+
+        assert isinstance(guid, int)
+        assert GUID.is_valid_async(guid)
+
+    def test_get_service_status(self) -> None:
+        status: ServiceStats = GUIDClient.get_service_status()
+
+        assert isinstance(status, dict)
+        assert (
+            status.keys() == ServiceStats.__required_keys__  # pylint: disable=no-member
+        )
+
+    async def test_get_service_status_async(self) -> None:
+        status: ServiceStats = await GUIDClient.get_service_status_async()
 
         assert isinstance(status, dict)
         assert (
@@ -63,29 +73,42 @@ class TestGUIDClient:
         )
 
 
-@pytest_asyncio.fixture
-async def guid_instance() -> GUID:
+@pytest.fixture
+def guid_instance() -> GUID:
     """创建一个新的 GUID 实例"""
-    return await GUID.generate()
+    return GUID.generate()
 
 
-@pytest_asyncio.fixture
-async def client_guid() -> int:
+@pytest.fixture
+def client_guid() -> int:
     """从 ID 服务客户端中获取一个 GUID"""
-    return await GUIDClient.get_guid()
+    return GUIDClient.get_guid()
 
 
-@pytest_asyncio.fixture
-async def service_status() -> ServiceStats:
+@pytest.fixture
+def service_status() -> ServiceStats:
     """从 ID 服务客户端获取服务状态"""
-    return await GUIDClient.get_service_status()
+    return GUIDClient.get_service_status()
 
 
-INVALID_GUID: list[int] = [
+INVALID_GUID_INTEGER: list[int] = [
     12345678901234,
     -12345678901234,
     0,
     -1,
+]
+
+INVALID_GUID_STRING: list[tuple[str, str]] = [
+    ("0", r"is not a valid GUID"),
+    ("0x42919b569dbffe38", r"is not a number"),
+    ("abc", r"is not a number"),
+]
+
+PLUS_SECOND: list[int] = [
+    1,
+    10,
+    1000000,
+    365 * 24 * 60 * 60,
 ]
 
 
@@ -99,42 +122,65 @@ class TestGUID:
         with pytest.raises(AssertionError, match=r"GUID can only be created with"):
             GUID(client_guid, object())
 
-    async def test_generate(self) -> None:
-        _guid_instance: GUID = await GUID.generate()
-        assert isinstance(_guid_instance, GUID)
-        assert await GUID.is_valid(_guid_instance.guid)
+    def _is_guid_instance_valid(
+        self,
+        guid_instance: GUID,
+        from_guid: Optional[int] = None,
+    ) -> None:
+        assert isinstance(guid_instance, GUID)
+        assert GUID.is_valid(guid_instance.guid)
 
-    async def test_from_int(self, client_guid: int) -> None:
-        _guid_instance: GUID = await GUID.from_int(client_guid)
-        assert isinstance(_guid_instance, GUID)
-        assert await GUID.is_valid(client_guid)
-        assert _guid_instance.guid == client_guid
+        if from_guid is not None:
+            assert guid_instance.guid == from_guid
 
-    @pytest.mark.parametrize("guid", INVALID_GUID)
-    async def test_from_int_invalid_args(self, guid: int) -> None:
+    def test_generate(self) -> None:
+        _guid_instance: GUID = GUID.generate()
+        self._is_guid_instance_valid(_guid_instance)
+
+    async def test_generate_async(self) -> None:
+        _guid_instance: GUID = await GUID.generate_async()
+        self._is_guid_instance_valid(_guid_instance)
+
+    def test_from_int(self, client_guid: int) -> None:
+        _guid_instance: GUID = GUID.from_int(client_guid)
+        self._is_guid_instance_valid(_guid_instance, client_guid)
+
+    @pytest.mark.parametrize("guid", INVALID_GUID_INTEGER)
+    def test_from_int_invalid_args(self, guid: int) -> None:
         with pytest.raises(ValueError, match=r"is not a valid GUID"):
-            await GUID.from_int(guid)
+            GUID.from_int(guid)
 
-    async def test_from_str(self, client_guid: int) -> None:
-        _guid_instance: GUID = await GUID.from_str(str(client_guid))
-        assert isinstance(_guid_instance, GUID)
-        assert await GUID.is_valid(client_guid)
-        assert _guid_instance.guid == client_guid
+    async def test_from_int_async(self, client_guid: int) -> None:
+        _guid_instance: GUID = await GUID.from_int_async(client_guid)
+        self._is_guid_instance_valid(_guid_instance, client_guid)
 
-    @pytest.mark.parametrize(
-        ["guid", "error_pattern"],
-        [
-            ("0", r"is not a valid GUID"),
-            ("0x42919b569dbffe38", r"is not a number"),
-            ("abc", r"is not a number"),
-        ],
-    )
-    async def test_from_str_invalid_args(self, guid: str, error_pattern: str) -> None:
+    @pytest.mark.parametrize("guid", INVALID_GUID_INTEGER)
+    async def test_from_int_async_invalid_args(self, guid: int) -> None:
+        with pytest.raises(ValueError, match=r"is not a valid GUID"):
+            await GUID.from_int_async(guid)
+
+    def test_from_str(self, client_guid: int) -> None:
+        _guid_instance: GUID = GUID.from_str(str(client_guid))
+        self._is_guid_instance_valid(_guid_instance, client_guid)
+
+    @pytest.mark.parametrize(["guid", "error_pattern"], INVALID_GUID_STRING)
+    def test_from_str_invalid_args(self, guid: int, error_pattern) -> None:
         with pytest.raises(ValueError, match=error_pattern):
-            await GUID.from_str(guid)
+            GUID.from_str(str(guid))
 
-    async def test_guid(self, client_guid: int) -> None:
-        _guid_instance: GUID = await GUID.from_int(client_guid)
+    async def test_from_str_async(self, client_guid: int) -> None:
+        _guid_instance: GUID = await GUID.from_str_async(str(client_guid))
+        self._is_guid_instance_valid(_guid_instance, client_guid)
+
+    @pytest.mark.parametrize(["guid", "error_pattern"], INVALID_GUID_STRING)
+    async def test_from_str_async_invalid_args(
+        self, guid: str, error_pattern: str
+    ) -> None:
+        with pytest.raises(ValueError, match=error_pattern):
+            await GUID.from_str_async(guid)
+
+    def test_guid(self, client_guid: int) -> None:
+        _guid_instance: GUID = GUID.from_int(client_guid)
         assert _guid_instance.guid == client_guid
 
     @pytest.mark.parametrize(
@@ -153,9 +199,9 @@ class TestGUID:
         instance_property: str,
         stats_property: str,
     ) -> None:
-        assert (
-            getattr(guid_instance, instance_property) == service_status[stats_property]
-        )
+        attr_from_instance = getattr(guid_instance, instance_property)
+        attr_from_service = service_status[stats_property]
+        assert attr_from_instance == attr_from_service
 
     def test_create_time_str(self, guid_instance: GUID) -> None:
         assert (
@@ -165,22 +211,28 @@ class TestGUID:
     def test_is_valid(self, client_guid: int) -> None:
         assert GUID.is_valid(client_guid)
 
-    @pytest.mark.parametrize("guid", INVALID_GUID)
-    async def test_is_valid_invalid_args(self, guid: int) -> None:
-        assert not await GUID.is_valid(guid)
+    async def test_is_valid_async(self, client_guid: int) -> None:
+        assert await GUID.is_valid_async(client_guid)
 
-    @pytest.mark.parametrize(
-        "plus_second",
-        [
-            1,
-            10,
-            1000000,
-        ],
-    )
-    async def test_is_valid_future_timestamp(
+    @pytest.mark.parametrize("guid", INVALID_GUID_INTEGER)
+    def test_is_valid_invalid_args(self, guid: int) -> None:
+        assert not GUID.is_valid(guid)
+
+    @pytest.mark.parametrize("guid", INVALID_GUID_INTEGER)
+    async def test_is_valid_async_invalid_args(self, guid: int) -> None:
+        assert not await GUID.is_valid_async(guid)
+
+    @pytest.mark.parametrize("plus_second", PLUS_SECOND)
+    def test_is_valid_future_timestamp(
         self, client_guid: int, plus_second: int
     ) -> None:
-        assert not await GUID.is_valid(client_guid + ((plus_second * 1000) << 22))
+        assert not GUID.is_valid(client_guid + ((plus_second * 1000) << 22))
+
+    @pytest.mark.parametrize("plus_second", PLUS_SECOND)
+    async def test_is_valid_async_future_timestamp(
+        self, client_guid: int, plus_second: int
+    ) -> None:
+        assert not await GUID.is_valid_async(client_guid + ((plus_second * 1000) << 22))
 
     def test_get_custom_create_time_str(self, guid_instance: GUID) -> None:
         time_str_format: str = r"%Y-%m-%d %H:%M:%S"
@@ -220,8 +272,8 @@ class TestGUID:
             str,
         ],
     )
-    async def test_eq(self, client_guid: int, other_type: type[Any]) -> None:
-        assert await GUID.from_int(client_guid) == other_type(client_guid)
+    def test_eq(self, client_guid: int, other_type: type[Any]) -> None:
+        assert GUID.from_int(client_guid) == other_type(client_guid)
 
     def test_eq_self(self, guid_instance: GUID) -> None:
         assert guid_instance == guid_instance
@@ -232,13 +284,11 @@ class TestGUID:
             float,
         ],
     )
-    async def test_eq_invalid_args(
-        self, client_guid: int, other_type: type[Any]
-    ) -> None:
-        assert await GUID.from_int(client_guid) != other_type(client_guid)
+    def test_eq_invalid_args(self, client_guid: int, other_type: type[Any]) -> None:
+        assert GUID.from_int(client_guid) != other_type(client_guid)
 
-    async def test_str(self, client_guid: int) -> None:
-        assert str(await GUID.from_int(client_guid)) == str(client_guid)
+    def test_str(self, client_guid: int) -> None:
+        assert str(GUID.from_int(client_guid)) == str(client_guid)
 
     def test_repr(self, guid_instance: GUID) -> None:
         assert f"GUID({guid_instance.guid})" == repr(guid_instance)

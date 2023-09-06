@@ -1,7 +1,7 @@
 from time import localtime, strftime, struct_time
 from typing import Annotated, Any, Callable, NoReturn, Optional, TypeAlias, TypedDict
 
-from httpx import AsyncClient, Response
+from httpx import AsyncClient, Client, Response
 from loguru import logger
 from pydantic import GetJsonSchemaHandler
 from pydantic.json_schema import JsonSchemaValue
@@ -57,7 +57,18 @@ class GUIDClient:
         )
 
     @classmethod
-    async def get_guid(cls) -> int:
+    def get_guid(cls) -> int:
+        """同步请求 ID 服务提供新的 guid
+
+        Returns:
+            int: 新生成的 guid
+        """
+        with Client(base_url=cls._id_service_address) as client:
+            res: Response = client.get("/")
+            return int(res.text)
+
+    @classmethod
+    async def get_guid_async(cls) -> int:
         """异步请求 ID 服务提供新的 guid
 
         Returns:
@@ -68,7 +79,18 @@ class GUIDClient:
             return int(res.text)
 
     @classmethod
-    async def get_service_status(cls) -> ServiceStats:
+    def get_service_status(cls) -> ServiceStats:
+        """同步请求 ID 服务状态信息
+
+        Returns:
+            ServiceStats: 状态信息字典
+        """
+        with Client(base_url=cls._id_service_address) as client:
+            res: Response = client.get("/stats")
+            return ServiceStats(res.json())
+
+    @classmethod
+    async def get_service_status_async(cls) -> ServiceStats:
         """异步请求 ID 服务状态信息
 
         Returns:
@@ -113,16 +135,25 @@ class GUID:
         self._guid = guid
 
     @classmethod
-    async def generate(cls) -> "GUID":
+    def generate(cls) -> "GUID":
         """从服务端获取新的 GUID
 
         Returns:
             GUID: 新的 GUID 对象
         """
-        return cls(await GUIDClient.get_guid(), cls.__create_key)
+        return cls(GUIDClient.get_guid(), cls.__create_key)
 
     @classmethod
-    async def from_int(cls, guid: int) -> "GUID":
+    async def generate_async(cls) -> "GUID":
+        """从服务端获取新的 GUID
+
+        Returns:
+            GUID: 新的 GUID 对象
+        """
+        return cls(await GUIDClient.get_guid_async(), cls.__create_key)
+
+    @classmethod
+    def from_int(cls, guid: int) -> "GUID":
         """将数字类型的 GUID 转换为 GUID 对象
 
         Args:
@@ -131,13 +162,28 @@ class GUID:
         Returns:
             GUID: 新的 GUID 对象
         """
-        if not await cls.is_valid(guid):
+        if not cls.is_valid(guid):
             raise ValueError(f"'{guid}' is not a valid GUID")
 
         return cls(guid, cls.__create_key)
 
     @classmethod
-    async def from_str(cls, guid: str) -> "GUID":
+    async def from_int_async(cls, guid: int) -> "GUID":
+        """将数字类型的 GUID 转换为 GUID 对象，使用异步验证
+
+        Args:
+            guid (int): 数字类型的 GUID
+
+        Returns:
+            GUID: 新的 GUID 对象
+        """
+        if not await cls.is_valid_async(guid):
+            raise ValueError(f"'{guid}' is not a valid GUID")
+
+        return cls(guid, cls.__create_key)
+
+    @classmethod
+    def from_str(cls, guid: str) -> "GUID":
         """将 GUID 字符串转换为 GUID 对象
 
         Args:
@@ -149,7 +195,22 @@ class GUID:
         if not guid.isdigit():
             raise ValueError(f"guid ({guid}) is not a number")
 
-        return await cls.from_int(int(guid))
+        return cls.from_int(int(guid))
+
+    @classmethod
+    async def from_str_async(cls, guid: str) -> "GUID":
+        """将 GUID 字符串转换为 GUID 对象，使用异步验证
+
+        Args:
+            guid (str): GUID 字符串
+
+        Returns:
+            GUID: 新的 GUID 对象
+        """
+        if not guid.isdigit():
+            raise ValueError(f"guid ({guid}) is not a number")
+
+        return await cls.from_int_async(int(guid))
 
     @property
     def guid(self) -> int:
@@ -206,17 +267,7 @@ class GUID:
         return self._guid & 0xFFF
 
     @staticmethod
-    async def is_valid(guid: int) -> bool:
-        """判断 GUID 是否合法，时间戳应该必须比服务器时间小
-
-        Args:
-            GUID (int): 要检查的 GUID
-
-        Returns:
-            bool: 如果合法则返回真
-        """
-        status: ServiceStats = await GUIDClient.get_service_status()
-
+    def _is_valid_guid(guid: int, status: ServiceStats) -> bool:
         guid_raw_timestamp: int = guid >> 22
 
         if guid_raw_timestamp <= EPOCH_TIMESTAMP:
@@ -226,6 +277,32 @@ class GUID:
         current_timestamp: int = status.get("timestamp")
 
         return guid_timestamp <= current_timestamp
+
+    @staticmethod
+    def is_valid(guid: int) -> bool:
+        """判断 GUID 是否合法，时间戳应该必须比服务器时间小
+
+        Args:
+            GUID (int): 要检查的 GUID
+
+        Returns:
+            bool: 如果合法则返回真
+        """
+        status: ServiceStats = GUIDClient.get_service_status()
+        return GUID._is_valid_guid(guid, status)
+
+    @staticmethod
+    async def is_valid_async(guid: int) -> bool:
+        """判断 GUID 是否合法，时间戳应该必须比服务器时间小，使用异步获取服务器信息
+
+        Args:
+            GUID (int): 要检查的 GUID
+
+        Returns:
+            bool: 如果合法则返回真
+        """
+        status: ServiceStats = await GUIDClient.get_service_status_async()
+        return GUID._is_valid_guid(guid, status)
 
     def get_custom_create_time_str(self, format_str: Optional[str] = None) -> str:
         """获取 GUID 创建时的时间字符串
