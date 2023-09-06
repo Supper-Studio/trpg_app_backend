@@ -281,16 +281,7 @@ class GUID:
         return str(self._guid)
 
     def __repr__(self) -> str:
-        info: Generator[str, None, None] = (
-            f"{k}={v}" for k, v in self.get_all_details().items()
-        )
-        return f"GUID({', '.join(info)})"
-
-    # @classmethod
-    # def __get_pydantic_core_schema__(
-    #     cls, source_type: Any, handler: GetCoreSchemaHandler
-    # ) -> CoreSchema:
-    #     return core_schema.no_info_after_validator_function(cls, handler(str))
+        return f"{self.__class__.__name__}({self._guid})"
 
 
 class _GUIDAnnotation:
