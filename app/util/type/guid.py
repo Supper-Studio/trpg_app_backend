@@ -206,7 +206,7 @@ class GUID:
         return self._guid & 0xFFF
 
     @staticmethod
-    def is_valid(guid: int) -> bool:
+    async def is_valid(guid: int) -> bool:
         """判断 GUID 是否合法，时间戳应该必须比服务器时间小
 
         Args:
@@ -215,7 +215,17 @@ class GUID:
         Returns:
             bool: 如果合法则返回真
         """
-        return 0 < (guid >> 22) <= client.get_stats()["timestamp"] - EPOCH_TIMESTAMP
+        status: ServiceStats = await GUIDClient.get_service_status()
+
+        guid_raw_timestamp: int = guid >> 22
+
+        if guid_raw_timestamp <= EPOCH_TIMESTAMP:
+            return False
+
+        guid_timestamp: int = guid_raw_timestamp + EPOCH_TIMESTAMP
+        current_timestamp: int = status.get("timestamp")
+
+        return guid_timestamp <= current_timestamp
 
     def get_custom_create_time_str(self, format_str: Optional[str] = None) -> str:
         """获取 GUID 创建时的时间字符串

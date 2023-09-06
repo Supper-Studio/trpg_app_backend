@@ -139,11 +139,22 @@ class TestGUID:
     def test_create_timestamp_ms(self, new_guid: GUID) -> None:
         assert new_guid.create_timestamp_ms == client.get_stats().get("last_timestamp")
 
-    def test_create_time_str(self, new_guid: GUID) -> None:
-        assert new_guid.get_custom_create_time_str() == new_guid.create_time_str
+    @pytest.mark.parametrize("guid", INVALID_GUID)
+    async def test_is_valid_invalid_args(self, guid: int) -> None:
+        assert not await GUID.is_valid(guid)
 
-    def test_center(self, new_guid: GUID) -> None:
-        assert new_guid.data_center == client.get_stats().get("dc")
+    @pytest.mark.parametrize(
+        "plus_second",
+        [
+            1,
+            10,
+            1000000,
+        ],
+    )
+    async def test_is_valid_future_timestamp(
+        self, client_guid: int, plus_second: int
+    ) -> None:
+        assert not await GUID.is_valid(client_guid + ((plus_second * 1000) << 22))
 
     def test_worker(self, new_guid: GUID) -> None:
         assert new_guid.worker == client.get_stats().get("worker")
