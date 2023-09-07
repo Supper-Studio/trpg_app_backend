@@ -5,7 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field, GetJsonSchemaHandler, HttpUrl
 from pydantic.json_schema import JsonSchemaValue
 from pydantic_core import core_schema
 
-from app.exception.error_code.module_number import ModuleNumber
+from app.exception.error_code.module_name import ModuleName
 
 
 class ErrorType(str, Enum):
@@ -18,7 +18,7 @@ class ErrorCodeModel(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     error_type: ErrorType = Field(default=ErrorType.SERVER_ERROR)
-    module_number: ModuleNumber = Field(default=..., ge=0, le=9999)
+    module_name: ModuleName = Field(default=..., ge=0, le=9999)
     error_number: int = Field(default=..., ge=0, le=9999)
 
     @classmethod
@@ -37,27 +37,27 @@ class ErrorCodeModel(BaseModel):
         if len(raw_error_code) != 9:
             raise ValueError(f"Invalid error code length: {len(raw_error_code)}")
 
-        error_type, raw_module_number, raw_error_number = (
+        error_type, raw_module_name, raw_error_number = (
             raw_error_code[0],
             raw_error_code[1:5],
             raw_error_code[5:],
         )
 
-        module_number: int = int(raw_module_number)
+        module_name: int = int(raw_module_name)
 
-        if module_number not in ModuleNumber.__members__.values():
-            raise ValueError(f"Invalid module number: {module_number}")
+        if module_name not in ModuleName.__members__.values():
+            raise ValueError(f"Invalid module number: {module_name}")
 
         error_number: int = int(raw_error_number)
 
         return cls(
             error_type=ErrorType(error_type),
-            module_number=ModuleNumber(module_number),
+            module_name=ModuleName(module_name),
             error_number=error_number,
         )
 
     def __str__(self) -> str:
-        return f"{self.error_type}{self.module_number:0>4}{self.error_number:0>4}"
+        return f"{self.error_type}{self.module_name:0>4}{self.error_number:0>4}"
 
 
 class _ErrorCodeAnnotation:
