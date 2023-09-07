@@ -1,43 +1,104 @@
 from time import localtime, strftime, struct_time
-from typing import (
-    Annotated,
-    Any,
-    Callable,
-    Generator,
-    NoReturn,
-    Optional,
-    TypeAlias,
-    TypedDict,
-    overload,
-)
+from typing import Annotated, Any, Callable, NoReturn, Optional, TypeAlias, TypedDict
 
+from httpx import AsyncClient, Client, Response
 from loguru import logger
 from pydantic import GetJsonSchemaHandler
 from pydantic.json_schema import JsonSchemaValue
 from pydantic_core import core_schema
-from snowflake import client
 from snowflake.server.generator import EPOCH_TIMESTAMP
 
 from app.util.settings import Settings, SettingsManager
 
 
+class ServiceStats(TypedDict):
+    dc: int
+    worker: int
+    timestamp: int
+    last_timestamp: int
+    sequence: int
+    sequence_overload: int
+    errors: int
+
+
 class GUIDClient:
+    _id_service_address: str = "http://localhost:8910"
+
     def __init__(
         self,
     ) -> NoReturn:
         raise RuntimeError("This class is not meant to be instantiated")
 
-    @staticmethod
-    def start_up() -> None:
-        """配置 Snowflake ID 服务的客户端"""
-        settings: Settings = SettingsManager.get_settings()
+    @classmethod
+    def set_address(cls, host: str, port: int) -> None:
+        """设置 ID 服务的根路径
 
-        client.setup(
+        Args:
+            host (str): 主机地址
+            port (int): 端口号
+        """
+        address: str = f"http://{host}:{port}"
+
+        cls._id_service_address = address
+        logger.info(f"Set ID service address to {address}")
+
+    @classmethod
+    def get_address(cls) -> str:
+        """获取 ID 服务"""
+        return cls._id_service_address
+
+    @classmethod
+    def set_address_by_settings(cls) -> None:
+        """将 ID 服务的根路径设置为环境变量（或 .env 文件）中的值"""
+        settings: Settings = SettingsManager.get_settings()
+        cls.set_address(
             host=settings.id_service.host,
             port=settings.id_service.port,
         )
 
-        logger.info(f"Snowflake ID Service status: {client.get_stats()}")
+    @classmethod
+    def get_guid(cls) -> int:
+        """同步请求 ID 服务提供新的 guid
+
+        Returns:
+            int: 新生成的 guid
+        """
+        with Client(base_url=cls._id_service_address) as client:
+            res: Response = client.get("/")
+            return int(res.text)
+
+    @classmethod
+    async def get_guid_async(cls) -> int:
+        """异步请求 ID 服务提供新的 guid
+
+        Returns:
+            int: 新生成的 guid
+        """
+        async with AsyncClient(base_url=cls._id_service_address) as client:
+            res: Response = await client.get("/")
+            return int(res.text)
+
+    @classmethod
+    def get_service_status(cls) -> ServiceStats:
+        """同步请求 ID 服务状态信息
+
+        Returns:
+            ServiceStats: 状态信息字典
+        """
+        with Client(base_url=cls._id_service_address) as client:
+            res: Response = client.get("/stats")
+            return ServiceStats(res.json())
+
+    @classmethod
+    async def get_service_status_async(cls) -> ServiceStats:
+        """异步请求 ID 服务状态信息
+
+        Returns:
+            ServiceStats: 状态信息字典
+        """
+        async with AsyncClient(base_url=cls._id_service_address) as client:
+            res: Response = await client.get("/stats")
+            return ServiceStats(res.json())
 
 
 class GUIDDetail(TypedDict):
@@ -63,55 +124,13 @@ class GUID:
     """
 
     _guid: int = 0
+    __create_key = object()
 
-    @overload
-    def __init__(self) -> None:
-        """生成新的 GUID 对象。"""
-
-    @overload
-    def __init__(self, guid: str) -> None:
-        """通过解析字符串创建新的 GUID 对象。
-
-        Args:
-            guid (str): 要解析的 GUID 字符串
-
-        Raises:
-            ValueError: GUID 不合法时抛出异常
-        """
-
-    @overload
-    def __init__(self, guid: int, *, need_validate: Optional[bool] = True) -> None:
-        """使用整型数据创建新的 GUID 对象。
-
-        Args:
-            guid (int): GUID 数据
-            need_validate (Optional[bool], optional): 是否需要校验，请勿手动传入这个参数. Defaults to True.
-
-        Raises:
-            ValueError: GUID 不合法时抛出异常
-        """
-
-    def __init__(
-        self,
-        guid: Optional[int | str] = None,
-        *,
-        need_validate: Optional[bool] = True,
-    ) -> None:
-        if guid is None:
-            self._guid = client.get_guid()
-            return
-
-        if isinstance(guid, int) and not need_validate:
-            self._guid = guid
-            return
-
-        if isinstance(guid, str):
-            if not guid.isdigit():
-                raise ValueError(f"guid ({guid}) is not a number")
-            guid = int(guid)
-
-        if not self.is_valid(guid):
-            raise ValueError(f"'{guid}' is not a valid GUID")
+    def __init__(self, guid: int, key: object) -> None:
+        assert key == GUID.__create_key, (
+            "GUID can only be created with "
+            + "GUID.generate(), GUID.from_str() or GUID.from_int()"
+        )
 
         self._guid = guid
 
@@ -120,23 +139,78 @@ class GUID:
         """从服务端获取新的 GUID
 
         Returns:
-            T: 新的 GUID 对象
+            GUID: 新的 GUID 对象
         """
-        return cls(client.get_guid(), need_validate=False)
+        return cls(GUIDClient.get_guid(), cls.__create_key)
 
     @classmethod
-    def parse_str(cls, guid: str) -> "GUID":
+    async def generate_async(cls) -> "GUID":
+        """从服务端获取新的 GUID
+
+        Returns:
+            GUID: 新的 GUID 对象
+        """
+        return cls(await GUIDClient.get_guid_async(), cls.__create_key)
+
+    @classmethod
+    def from_int(cls, guid: int) -> "GUID":
+        """将数字类型的 GUID 转换为 GUID 对象
+
+        Args:
+            guid (int): 数字类型的 GUID
+
+        Returns:
+            GUID: 新的 GUID 对象
+        """
+        if not cls.is_valid(guid):
+            raise ValueError(f"'{guid}' is not a valid GUID")
+
+        return cls(guid, cls.__create_key)
+
+    @classmethod
+    async def from_int_async(cls, guid: int) -> "GUID":
+        """将数字类型的 GUID 转换为 GUID 对象，使用异步验证
+
+        Args:
+            guid (int): 数字类型的 GUID
+
+        Returns:
+            GUID: 新的 GUID 对象
+        """
+        if not await cls.is_valid_async(guid):
+            raise ValueError(f"'{guid}' is not a valid GUID")
+
+        return cls(guid, cls.__create_key)
+
+    @classmethod
+    def from_str(cls, guid: str) -> "GUID":
         """将 GUID 字符串转换为 GUID 对象
 
         Args:
             guid (str): GUID 字符串
 
         Returns:
-            T: 新的 GUID 对象
+            GUID: 新的 GUID 对象
         """
         if not guid.isdigit():
             raise ValueError(f"guid ({guid}) is not a number")
-        return cls(int(guid))
+
+        return cls.from_int(int(guid))
+
+    @classmethod
+    async def from_str_async(cls, guid: str) -> "GUID":
+        """将 GUID 字符串转换为 GUID 对象，使用异步验证
+
+        Args:
+            guid (str): GUID 字符串
+
+        Returns:
+            GUID: 新的 GUID 对象
+        """
+        if not guid.isdigit():
+            raise ValueError(f"guid ({guid}) is not a number")
+
+        return await cls.from_int_async(int(guid))
 
     @property
     def guid(self) -> int:
@@ -193,6 +267,18 @@ class GUID:
         return self._guid & 0xFFF
 
     @staticmethod
+    def _is_valid_guid(guid: int, status: ServiceStats) -> bool:
+        guid_raw_timestamp: int = guid >> 22
+
+        if guid_raw_timestamp <= EPOCH_TIMESTAMP:
+            return False
+
+        guid_timestamp: int = guid_raw_timestamp + EPOCH_TIMESTAMP
+        current_timestamp: int = status.get("timestamp")
+
+        return guid_timestamp <= current_timestamp
+
+    @staticmethod
     def is_valid(guid: int) -> bool:
         """判断 GUID 是否合法，时间戳应该必须比服务器时间小
 
@@ -202,7 +288,21 @@ class GUID:
         Returns:
             bool: 如果合法则返回真
         """
-        return 0 < (guid >> 22) <= client.get_stats()["timestamp"] - EPOCH_TIMESTAMP
+        status: ServiceStats = GUIDClient.get_service_status()
+        return GUID._is_valid_guid(guid, status)
+
+    @staticmethod
+    async def is_valid_async(guid: int) -> bool:
+        """判断 GUID 是否合法，时间戳应该必须比服务器时间小，使用异步获取服务器信息
+
+        Args:
+            GUID (int): 要检查的 GUID
+
+        Returns:
+            bool: 如果合法则返回真
+        """
+        status: ServiceStats = await GUIDClient.get_service_status_async()
+        return GUID._is_valid_guid(guid, status)
 
     def get_custom_create_time_str(self, format_str: Optional[str] = None) -> str:
         """获取 GUID 创建时的时间字符串
@@ -258,16 +358,7 @@ class GUID:
         return str(self._guid)
 
     def __repr__(self) -> str:
-        info: Generator[str, None, None] = (
-            f"{k}={v}" for k, v in self.get_all_details().items()
-        )
-        return f"GUID({', '.join(info)})"
-
-    # @classmethod
-    # def __get_pydantic_core_schema__(
-    #     cls, source_type: Any, handler: GetCoreSchemaHandler
-    # ) -> CoreSchema:
-    #     return core_schema.no_info_after_validator_function(cls, handler(str))
+        return f"{self.__class__.__name__}({self._guid})"
 
 
 class _GUIDAnnotation:
@@ -285,7 +376,7 @@ class _GUIDAnnotation:
         guid_schema: core_schema.ChainSchema = core_schema.chain_schema(
             [
                 core_schema.int_schema(),
-                core_schema.no_info_plain_validator_function(GUID),
+                core_schema.no_info_plain_validator_function(GUID.from_int),
             ]
         )
 
@@ -298,7 +389,8 @@ class _GUIDAnnotation:
                 ]
             ),
             serialization=core_schema.plain_serializer_function_ser_schema(
-                lambda instance: instance.guid,
+                str,
+                when_used="json",
             ),
         )
 
@@ -319,7 +411,7 @@ class _GUIDAnnotation:
 
 
 PydanticGUID: TypeAlias = (
-    Annotated[GUID, _GUIDAnnotation]
-    | Annotated[int, _GUIDAnnotation]
+    Annotated[int, _GUIDAnnotation]
     | Annotated[str, _GUIDAnnotation]
+    | Annotated[GUID, _GUIDAnnotation]
 )
