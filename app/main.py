@@ -1,8 +1,10 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from starlette.middleware.httpsredirect import HTTPSRedirectMiddleware
 
+from app.exception import KnownException, handler
 from app.util.log import Logger
 from app.util.settings import Settings, SettingsManager
 
@@ -43,5 +45,11 @@ def create_app() -> FastAPI:
     app.add_event_handler("startup", Logger.start_logging)
 
     app.add_event_handler("shutdown", Logger.stop_logging)
+
+    # 注册异常处理器
+    app.add_exception_handler(RequestValidationError, handler.invaild_argument_handler)
+    app.add_exception_handler(KnownException, handler.known_error_handler)
+    app.add_exception_handler(HTTPException, handler.http_exception_handler)
+    app.add_exception_handler(Exception, handler.general_exception_handler)
 
     return app
