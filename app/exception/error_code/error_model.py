@@ -56,6 +56,14 @@ class ErrorCodeModel(BaseModel):
             error_number=error_number,
         )
 
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__name__}("
+            + f"error_type={self.error_type:!r}, "
+            + f"module_name={self.module_name:!r}, "
+            + f"error_number={self.error_number:!r})"
+        )
+
     def __str__(self) -> str:
         return f"{self.error_type}{self.module_name:0>4}{self.error_number:0>4}"
 
@@ -117,3 +125,6 @@ class ErrorInfo(BaseModel):
     detail: Any = Field(default=...)
     help: Optional[str] = Field(default=None)
     document_url: Optional[HttpUrl] = Field(default=None)
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}(code={str(self.code)}"
