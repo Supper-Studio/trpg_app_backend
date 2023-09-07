@@ -13,14 +13,18 @@ from pydantic import (
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class _ServiceSettings(BaseModel):
+class _BaseSettings(BaseModel):
+    model_config = SettingsConfigDict(frozen=True)
+
+
+class _ServiceSettings(_BaseSettings):
     host: str = Field(default="localhost", title="Service host")
     port: int = Field(default=8000, title="Service port")
     origins: list[str] = Field(default=["localhost"], title="List of trusted domains")
     gzip_min_size: int = Field(default=500, title="Gzip min size")
 
 
-class _SSLSettings(BaseModel):
+class _SSLSettings(_BaseSettings):
     keyfile: Optional[Path] = Field(default=None, title="Path to SSL key file")
     certfile: Optional[Path] = Field(default=None, title="Path to SSL certificate file")
     redirect: bool = Field(default=False, title="Redirect all requests to HTTPS")
@@ -83,20 +87,20 @@ class _SSLSettings(BaseModel):
         return True
 
 
-class _DatabaseSettings(BaseModel):
+class _DatabaseSettings(_BaseSettings):
     mongo_url: MongoDsn = Field(
         default=...,
         title="Mongo database URL",
-        examples=["mongodb://username:password@localhost:2017/"],
+        examples=[MongoDsn("mongodb://username:password@localhost:27017/")],
     )
     redis_url: RedisDsn = Field(
         default=...,
         title="Redis database URL",
-        examples=["redis://username:password@localhost:6379/1"],
+        examples=[RedisDsn("redis://username:password@localhost:6379/1")],
     )
 
 
-class _DocumentSettings(BaseModel):
+class _DocumentSettings(_BaseSettings):
     docs_path: str = Field(
         default="/docs",
         title="Document URL",
@@ -104,7 +108,7 @@ class _DocumentSettings(BaseModel):
     redoc_path: str = Field(default="/redocs", title="Redocs URL")
 
 
-class _LogSettings(BaseModel):
+class _LogSettings(_BaseSettings):
     rotation: str = Field(
         default="200 MB",
         title="日志分隔方式",
@@ -154,7 +158,7 @@ class _LogSettings(BaseModel):
         return retention
 
 
-class _IDServiceSettings(BaseModel):
+class _IDServiceSettings(_BaseSettings):
     host: str = Field(default="localhost", title="ID Service host")
     port: int = Field(default=3306, title="ID Service port")
 
@@ -163,14 +167,32 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=None,
         env_nested_delimiter="__",
+        frozen=True,
     )
 
-    service: _ServiceSettings = Field(default=..., title="Service settings")
-    ssl: _SSLSettings = Field(default=..., title="SSL settings")
-    database: _DatabaseSettings = Field(default=..., title="Database settings")
-    document: _DocumentSettings = Field(default=..., title="Document settings")
-    log: _LogSettings = Field(default=..., title="Log settings")
-    id_service: _IDServiceSettings = Field(default=..., title="ID Service settings")
+    service: _ServiceSettings = Field(
+        default=_ServiceSettings(), title="Service settings"
+    )
+    ssl: _SSLSettings = Field(
+        default=_SSLSettings(),
+        title="SSL settings",
+    )
+    database: _DatabaseSettings = Field(
+        default=...,
+        title="Database settings",
+    )
+    document: _DocumentSettings = Field(
+        default=_DocumentSettings(),
+        title="Document settings",
+    )
+    log: _LogSettings = Field(
+        default=_LogSettings(),
+        title="Log settings",
+    )
+    id_service: _IDServiceSettings = Field(
+        default=_IDServiceSettings(),
+        title="ID Service settings",
+    )
 
 
 class SettingsManager:
