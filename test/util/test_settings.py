@@ -1,13 +1,37 @@
 from pathlib import Path
+from test.testing_util.pydantic_model import PydanticFrozenModel
 
 import pytest
+from pydantic import BaseModel, MongoDsn, RedisDsn
+from typing_extensions import override
 
-from app.util.settings import Settings, SettingsManager, _LogSettings, _SSLSettings
+from app.util.settings import (
+    Settings,
+    SettingsManager,
+    _DatabaseSettings,
+    _DocumentSettings,
+    _IDServiceSettings,
+    _LogSettings,
+    _ServiceSettings,
+    _SSLSettings,
+)
 
 # pylint: disable=protected-access
 
 
-class TestSSLSettings:
+class TestServiceSettings(PydanticFrozenModel):
+    @pytest.fixture
+    @override
+    def _model_instance(self) -> BaseModel:
+        return _ServiceSettings()
+
+
+class TestSSLSettings(PydanticFrozenModel):
+    @pytest.fixture
+    @override
+    def _model_instance(self) -> BaseModel:
+        return _SSLSettings()
+
     def test_convert_relative_path(self, not_existing_file: Path) -> None:
         ssl_settings = _SSLSettings(
             keyfile=not_existing_file,
@@ -36,7 +60,39 @@ class TestSSLSettings:
         assert ssl_settings.redirect is True
 
 
-class TestLogSettings:
+@pytest.fixture
+def database_settings() -> _DatabaseSettings:
+    """创建默认的 _DatabaseSettings 实例，仅用于测试字段，可能并没发链接数据库
+
+    Returns:
+        _DatabaseSettings: 数据库设置项
+    """
+    return _DatabaseSettings(
+        mongo_url=MongoDsn("mongodb://username:password@localhost:2017/"),
+        redis_url=RedisDsn("redis://username:password@localhost:6379/1"),
+    )
+
+
+class TestDatabaseSettings(PydanticFrozenModel):
+    @pytest.fixture
+    @override
+    def _model_instance(self, database_settings: _DatabaseSettings) -> BaseModel:
+        return database_settings
+
+
+class TestDocumentSettings(PydanticFrozenModel):
+    @pytest.fixture
+    @override
+    def _model_instance(self) -> BaseModel:
+        return _DocumentSettings()
+
+
+class TestLogSettings(PydanticFrozenModel):
+    @pytest.fixture
+    @override
+    def _model_instance(self) -> BaseModel:
+        return _LogSettings()
+
     def test_check_retention(self) -> None:
         log_settings = _LogSettings(retention=-1)
         assert log_settings.retention == 0
@@ -46,6 +102,20 @@ class TestLogSettings:
 
         log_settings = _LogSettings(retention="1 days")
         assert log_settings.retention == "1 days"
+
+
+class TestIDServerSettings(PydanticFrozenModel):
+    @pytest.fixture
+    @override
+    def _model_instance(self) -> BaseModel:
+        return _IDServiceSettings()
+
+
+class TestSettings(PydanticFrozenModel):
+    @pytest.fixture
+    @override
+    def _model_instance(self, database_settings) -> BaseModel:
+        return Settings(database=database_settings)
 
 
 @pytest.fixture
